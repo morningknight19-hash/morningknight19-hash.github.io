@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stable ASL Translator</title>
+
+<style>
+body{
+  margin:0;
+  background:#111;
+  color:white;
+  text-align:center;
+  font-family:Arial;
+}
+h1{margin-top:20px;}
+video,canvas{
+  width:90%;
+  max-width:600px;
+  margin-top:20px;
+  border-radius:15px;
+  border:3px solid #00ffcc;
+}
+#output{
+  margin-top:20px;
+  font-size:28px;
+  color:#00ffcc;
+}
+</style>
+</head>
+
+<body>
+
+<h1>ASL Translator (Stable Version)</h1>
+
+<video id="video" autoplay playsinline></video>
+<canvas id="canvas"></canvas>
+<div id="output">Word: -</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+<script>
+
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const output = document.getElementById('output');
+
+let previousWristY = null;
+
+const hands = new Hands({
+  locateFile: file =>
+    `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+});
+
+hands.setOptions({
+  maxNumHands:2,
+  modelComplexity:1,
+  minDetectionConfidence:0.7,
+  minTrackingConfidence:0.7
+});
+
+function detectWord(landmarks){
+
+  function up(tip,pip){
+    return landmarks[tip].y < landmarks[pip].y;
+  }
+
+  const index = up(8,6);
+  const middle = up(12,10);
+  const ring = up(16,14);
+  const pinky = up(20,18);
+
+  const fingersUp = [index,middle,ring,pinky].filter(v=>v).length;
+  const wristY = landmarks[0].y;
+
+  // Angry = กำมือ
+  if(fingersUp === 0)
+    return "Angry 😠";
+
+  // Hello = กางมือ
+  if(fingersUp === 4)
+    return "Hello 👋";
+
+  // Love (ASL ILY sign)
+  if(index && pinky && !middle && !ring)
+    return "Love ❤️";
+
+  // Thank You = ขยับมือจากปากออกหน้า (motion)
+  if(previousWristY !== null){
+    if(previousWristY < 0.4 && wristY > previousWristY + 0.05)
+      return "Thank You 🙏";
+  }
+
+  // Hungry = มือเคลื่อนลง
+  if(previousWristY !== null){
+    if(wristY > previousWristY + 0.07)
+      return "Hungry 🍔";
+  }
+
+  previousWristY = wristY;
+
+  return "-";
+}
+
+hands.onResults(results => {
+
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.drawImage(results.image,0,0,canvas.width,canvas.height);
+
+  if(results.multiHandLandmarks &&
+     results.multiHandLandmarks.length > 0){
+
+    for(const landmarks of results.multiHandLandmarks){
+
+      drawConnectors(ctx, landmarks, HAND_CONNECTIONS,
+        {color:'#00ff00', lineWidth:2});
+      drawLandmarks(ctx, landmarks,
+        {color:'#ff0000', radius:2});
+
+      const word = detectWord(landmarks);
+      if(word !== "-"){
+        output.innerText = "Word: " + word;
+      }
+    }
+
+  } else {
+    output.innerText = "Word: -";
+  }
+
+});
+
+const camera = new Camera(video,{
+  onFrame: async ()=>{
+    await hands.send({image:video});
+  },
+  width:640,
+  height:480
+});
+
+camera.start();
+
+</script>
+</body>
+</html>
